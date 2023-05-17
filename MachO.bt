@@ -963,6 +963,5 @@ if(header.magic == MACHO_32 || header.magic == MACHO_64) {
 
         LoadCommand loadCommand[load_command_num];
         ParseCodeSignatureInLoadCommand(offset, load_command_idx, load_command_num);
-        load_command_idx = load_command_idx + load_command_num;
     }
 }
