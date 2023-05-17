@@ -826,7 +826,7 @@ typedef struct {
         break;  
 
     default :
-        Warning("Hit an unknown or unsupported load command : [%d]", command);
+        Warning("Hit an unknown or unsupported load command : [%x]", command);
         break;  //Exit(-1);
     }
 
@@ -841,9 +841,14 @@ string LoadCommandReader(LoadCommand &loadCommand) {
 
 // https://opensource.apple.com/source/dyld/dyld-551.4/dyld3/CodeSigningTypes.h
 typedef enum <uint32> {
-    CSMAGIC_CODEDIRECTORY = 0xFADE0C02,
-    CSMAGIC_EMBEDDED_SIGNATURE = 0xFADE0CC0, // embedded form of signature data    
-    CSMAGIC_BLOBWRAPPER = 0xFADE0B01,
+    CSMAGIC_REQUIREMENT         = 0xfade0c00,    // single Requirement blob
+    CSMAGIC_REQUIREMENTS        = 0xfade0c01,    // Requirements vector (internal requirements)
+    CSMAGIC_CODEDIRECTORY       = 0xfade0c02,    // CodeDirectory blob
+    CSMAGIC_EMBEDDED_SIGNATURE  = 0xfade0cc0,    // embedded form of signature data
+    CSMAGIC_DETACHED_SIGNATURE  = 0xfade0cc1,    // multi-arch collection of embedded signatures
+    CSMAGIC_BLOBWRAPPER         = 0xfade0b01,    // used for the cms blob
+    CSMAGIC_EMBEDDED_DER_ENTITLEMENTS = 0xfade7172,
+    CSMAGIC_EMBEDDED_ENTITLEMENTS = 0xfade7171,
 } CS_Magic <format=hex>;
 
 typedef enum <uint32> {
@@ -874,6 +879,12 @@ typedef struct {
 
 typedef struct {
     BigEndian();
+    ubyte data[0x20];
+    LittleEndian();
+} Slot_SHA1;
+
+typedef struct {
+    BigEndian();
     CS_Magic magic <comment="magic number (CSMAGIC_CODEDIRECTORY)", format=hex>;
     uint32 length <comment="total length of CodeDirectory blob", format=hex>;
     uint32 version <comment="compatibility version", format=hex>;
@@ -891,9 +902,40 @@ typedef struct {
     // followed by dynamic content as located by offset fields above
 
     local int structSize = 44;
-    ubyte data[length-structSize];
+    ubyte data[identOffset - structSize];
+
+    typedef struct {
+        BigEndian();
+        uint64 data[hashSize/8];
+        LittleEndian();
+    } Slot_hash;
+
+    local int special_hash_offset = hashOffset - (hashSize * nSpecialSlots);
+    char ident_string[special_hash_offset - identOffset];
+
+    Slot_hash special_slots[nSpecialSlots] <optimize=false, comment="Special Solts in reverse order([-1] in the last element).", format=hex>;
+    Slot_hash code_slots[nCodeSlots] <optimize=false, comment="Code Solts.", format=hex>;
+
     LittleEndian();
 } CS_CodeDirectory;
+
+typedef struct {
+    BigEndian();
+    CS_Magic magic <comment="magic number (CSMAGIC_REQUIREMENTS)", format=hex>;
+    uint32 length <comment="total length of Requirements blob", format=hex>;
+    local int structSize = 8;
+    ubyte data[length-structSize];
+    LittleEndian();
+} CS_Requirements;
+
+typedef struct {
+    BigEndian();
+    CS_Magic magic <comment="magic number (CSMAGIC_ENTITLEMENTS)", format=hex>;
+    uint32 length <comment="total length of Entitlements blob", format=hex>;
+    local int structSize = 8;
+    char data[length-structSize];
+    LittleEndian();
+} CS_Entitlements;
 
 typedef struct {
     BigEndian();
@@ -916,6 +958,13 @@ void ParseCodeSignature(int offset) {
         case CSSLOT_CODEDIRECTORY : 
         case CSSLOT_ALTERNATE_CODEDIRECTORIES:
             CS_CodeDirectory codeDirectory;
+            break;
+        case CSSLOT_REQUIREMENTS:
+            CS_Requirements Requirements;
+            break;
+        case CSSLOT_ENTITLEMENTS:
+        case CSSLOT_ENTITLEMENTS_DER:
+            CS_Entitlements Entitlements;
             break;
         case CSSLOT_CMS_SIGNATURE :
             CS_Blob cmsSignature;
