@@ -879,12 +879,7 @@ typedef struct {
 
 typedef struct {
     BigEndian();
-    ubyte data[0x20];
-    LittleEndian();
-} Slot_SHA1;
-
-typedef struct {
-    BigEndian();
+    local int pos = FTell();
     CS_Magic magic <comment="magic number (CSMAGIC_CODEDIRECTORY)", format=hex>;
     uint32 length <comment="total length of CodeDirectory blob", format=hex>;
     uint32 version <comment="compatibility version", format=hex>;
@@ -916,6 +911,7 @@ typedef struct {
     Slot_hash special_slots[nSpecialSlots] <optimize=false, comment="Special Solts in reverse order([-1] in the last element).", format=hex>;
     Slot_hash code_slots[nCodeSlots] <optimize=false, comment="Code Solts.", format=hex>;
 
+    FSeek(FTell() + length);
     LittleEndian();
 } CS_CodeDirectory;
 
